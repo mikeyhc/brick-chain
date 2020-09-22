@@ -2,9 +2,11 @@
 -behaviour(gen_server).
 
 %% public API
--export([start_link/3, broadcast/2]).
+-export([start_link/3, broadcast/2, broadcast_brick/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
+
+-include("brick.hrl").
 
 -define(TIMEOUT, 10000). % 10 seconds
 -define(P2P_PORT, 5557).
@@ -23,6 +25,10 @@
 start_link(Interface, AnnounceHost, AnnouncePort) ->
     gen_server:start_link(?MODULE, [Interface, AnnounceHost, AnnouncePort], []).
 
+broadcast_brick(Pid, Brick) ->
+    Email = ledger:self_email(),
+    broadcast(Pid, {brick, Email, Brick}).
+
 broadcast(Pid, Msg) ->
     Ref = make_ref(),
     gen_server:cast(Pid, {broadcast, Ref, self(), Msg}),
@@ -38,8 +44,11 @@ init([Interface, Host, Port]) ->
     gen_server:cast(self(), {fetch_peers, Host, Port}),
     {ok, #state{interface=Interface}}.
 
-handle_call(_Msg, _From, State) ->
-    {noreply, State}.
+handle_call({peer_msg, Msg}, _From, State) ->
+    logger:info("received peer msg: ~p", [Msg]),
+    case Msg of
+        {brick, Email, Brick} -> {reply, handle_brick(Email, Brick), State}
+    end.
 
 handle_cast({fetch_peers, Host, Port}, State) ->
     SelfPid = self(),
@@ -58,13 +67,18 @@ handle_cast({broadcast, Ref, Pid, Msg}, State) ->
     Fn = fun(Peer) -> broadcast_(Peer, Ref, Msg) end,
     lists:foreach(Fn, State#state.peers),
     NewPeers = receive_peers(Ref, Pid, State#state.peers),
-    {noreply, State#state{peers=NewPeers}}.
+    {noreply, State#state{peers=NewPeers}};
+handle_cast({forward, Brick}, State) ->
+    {ok, Results} = broadcast_brick(self(), Brick),
+    Oks = lists:filter(fun(X) -> X =:= ok end, Results),
+    Quorem = trunc(length(State#state.peers)),
+    if Oks < Quorem -> ok; % TODO rollback
+       true -> ledger:commit_brick(Brick#brick.hash)
+    end,
+    {noreply, State}.
 
 handle_info({broadcast_reply, Ref, _Replies}, State) ->
     logger:warn("late reply to ~p", [Ref]),
-    {noreply, State};
-handle_info({peer_msg, Msg}, State) ->
-    logger:info("received peer msg: ~p", [Msg]),
     {noreply, State}.
 
 register_peer(Socket, Addr) ->
@@ -84,7 +98,7 @@ register_peer(Socket, Addr) ->
 broadcast_(#peer{host=Host, socket=Socket}, Ref, Msg) ->
     SelfPid = self(),
     Fn = fun() ->
-        ok = chumak:send(Socket, erlang:term_to_binary({msg, Msg})),
+        ok = chumak:send(Socket, erlang:term_to_binary(Msg)),
         {ok, Data} = chumak:recv(Socket),
         SelfPid ! {peer_reply, Host, Ref, Data}
     end,
@@ -129,6 +143,22 @@ peer_listener(Pid, Interface) ->
 
 listener_loop(Socket, Pid) ->
     {ok, Data} = chumak:recv(Socket),
-    Pid ! {peer_msg, erlang:binary_to_term(Data, [safe])},
-    ok = chumak:send(Socket, erlang:term_to_binary(ok)),
+    Msg = erlang:binary_to_term(Data, [safe]),
+    Reply = gen_server:call(Pid, {peer_msg, Msg}),
+    ok = chumak:send(Socket, erlang:term_to_binary(Reply)),
     listener_loop(Socket, Pid).
+
+handle_brick(Email, Brick) ->
+    case ledger:get_brick(Brick#brick.hash) of
+        {ok, _Brick} -> ok;
+        false ->
+            case ledger:verify_brick(Email, Brick) of
+                ok ->
+                    ledger:stage_brick(Brick),
+                    gen_server:cast(self(), {forward, Brick}),
+                    ok;
+                Err ->
+                    Err
+                    % TODO reject brick with err
+            end
+    end.

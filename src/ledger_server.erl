@@ -4,8 +4,9 @@
 -include("brick.hrl").
 
 % public API
--export([start_link/3, email/1, private_key/1, public_key/1, stage/2,
-         commit/2]).
+-export([start_link/3]).
+-export([email/1, private_key/1, public_key/1, head/1]).
+-export([stage/2, commit/2]).
 % gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2]).
 
@@ -30,6 +31,9 @@ private_key(Pid) ->
 public_key(Pid) ->
     gen_server:call(Pid, public_key).
 
+head(Pid) ->
+    gen_server:call(Pid, head).
+
 stage(Pid, Brick) ->
     gen_server:call(Pid, {stage, Brick}).
 
@@ -48,6 +52,8 @@ handle_call(private_key, _From, State) ->
     {reply, State#state.private_key, State};
 handle_call(public_key, _From, State) ->
     {reply, State#state.public_key, State};
+handle_call(head, _From, State) ->
+    {reply, State#state.head, State};
 handle_call({stage, Brick}, _From, State=#state{staged=Staged}) ->
     NewStaged = Staged#{Brick#brick.hash => Brick},
     {reply, ok, State#state{staged=NewStaged}};
