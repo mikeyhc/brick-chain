@@ -6,7 +6,9 @@
   {applications,
    [kernel,
     stdlib,
-    mnesia
+    mnesia,
+    chumak,
+    public_key
    ]},
   {env,[]},
   {modules, []},

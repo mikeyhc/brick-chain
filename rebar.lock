@@ -1,1 +1,4 @@
-[].
+[{<<"chumak">>,
+  {git,"https://github.com/zeromq/chumak",
+       {ref,"c9094a043d2372b56d71516870274343b462b407"}},
+  0}].

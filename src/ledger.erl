@@ -4,6 +4,8 @@
 
 -export([install/1, write_brick/1, get_brick/1 ,write_key/2, get_key/1,
          verify_brick/2]).
+-export([stage_brick/1, commit_brick/1]).
+-export([self_email/0, self_private_key/0, self_public_key/0]).
 
 -record(ledger_key, {email :: binary(),
                      key :: public_key:public_key()
@@ -21,6 +23,14 @@ install(Nodes) ->
                          {disc_copies, Nodes}]),
     rpc:multicall(Nodes, application, stop, [mnesia]),
     ok.
+
+stage_brick(Brick) ->
+    LedgerPid = brick_chain_sup:get_ledger(),
+    ledger_server:stage(LedgerPid, Brick).
+
+commit_brick(Hash) ->
+    LedgerPid = brick_chain_sup:get_ledger(),
+    ledger_server:commit(LedgerPid, Hash).
 
 -spec write_brick(brick()) -> ok.
 write_brick(Brick) ->
@@ -69,7 +79,19 @@ verify_brick(Email, Brick) ->
             ],
     run_tests(Tests, #{}).
 
-%% help methods
+self_email() ->
+    LedgerPid = brick_chain_sup:get_ledger(),
+    ledger_server:email(LedgerPid).
+
+self_private_key() ->
+    LedgerPid = brick_chain_sup:get_ledger(),
+    ledger_server:private_key(LedgerPid).
+
+self_public_key() ->
+    LedgerPid = brick_chain_sup:get_ledger(),
+    ledger_server:public_key(LedgerPid).
+
+%% helper methods
 
 get_previous(#brick{previous=Previous}) ->
     get_brick(Previous).
