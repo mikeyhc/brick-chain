@@ -69,12 +69,13 @@ handle_cast({broadcast, Ref, Pid, Msg}, State) ->
     NewPeers = receive_peers(Ref, Pid, State#state.peers),
     {noreply, State#state{peers=NewPeers}};
 handle_cast({forward, Brick}, State) ->
-    {ok, Results} = broadcast_brick(self(), Brick),
-    Oks = lists:filter(fun(X) -> X =:= ok end, Results),
-    Quorem = trunc(length(State#state.peers)),
-    if Oks < Quorem -> ok; % TODO rollback
-       true -> ledger:commit_brick(Brick#brick.hash)
-    end,
+    % {ok, Results} = broadcast_brick(self(), Brick),
+    % Oks = lists:filter(fun(X) -> X =:= ok end, Results),
+    % Quorem = trunc(length(State#state.peers)),
+    % if Oks < Quorem -> ok; % TODO rollback
+    %    true -> ledger:commit_brick(Brick#brick.hash)
+    % end,
+    ledger:commit_brick(Brick#brick.hash),
     {noreply, State}.
 
 handle_info({broadcast_reply, Ref, _Replies}, State) ->
